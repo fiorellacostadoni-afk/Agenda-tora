@@ -124,7 +124,7 @@ db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session?.use
  const escapeText=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  if(businessId){document.getElementById('landing').classList.add('hidden');document.getElementById('auth').classList.add('hidden');document.getElementById('dashboard').classList.add('hidden');document.getElementById('topActions').classList.add('hidden');publicSection.classList.remove('hidden');
   (async()=>{try{
-   const {data:b,error:be}=await db.from('negocios_publicos').select('id,nombre,horarios,logo_url').eq('id',businessId).maybeSingle();
+   const {data:b,error:be}=await db.from('negocios_publicos').select('id,nombre,logo_url').eq('id',businessId).maybeSingle();
    if(be)throw be;if(!b)throw new Error('No encontramos este negocio. Pedile al profesional que te comparta nuevamente su enlace de reservas.');
    document.getElementById('publicBusinessName').textContent=(b.nombre||'Reservas online')+(b.horarios?' · Horarios: '+b.horarios:'');if(b.logo_url){const logo=document.createElement('img');logo.src=b.logo_url;logo.alt='Logo del negocio';logo.style='display:block;max-width:160px;max-height:110px;object-fit:contain;margin:0 auto 16px;border-radius:14px';document.getElementById('publicBooking').querySelector('.panel').prepend(logo)}
    const [{data:ss,error:se},{data:pp,error:pe}]=await Promise.all([db.from('servicios').select('id,nombre,duracion_minutos,precio').eq('negocio_id',businessId).eq('activo',true).order('nombre'),db.from('profesionales').select('id,nombre,horarios').eq('negocio_id',businessId).eq('activo',true).order('nombre')]);

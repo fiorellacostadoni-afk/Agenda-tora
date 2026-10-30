@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "TusTurna",
+  "short_name": "TusTurna",
+  "description": "TusTurna: Tu agenda organizada. Tus turnos resueltos.",
+  "lang": "es-AR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#7963A8",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

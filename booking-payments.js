@@ -35,10 +35,25 @@
 
   async function responseData(result) {
     if (!result.error) return result.data;
-    let detail;
-    try { detail = await result.error.context?.clone().json(); } catch { /* The browser may have blocked the response. */ }
+    const context = result.error.context;
+    const status = Number(context?.status || 0);
+    let detail = null;
+    try {
+      if (typeof context?.clone === 'function') {
+        const response = context.clone();
+        const contentType = response.headers?.get?.('content-type') || '';
+        if (contentType.includes('json')) detail = await response.json();
+      }
+    } catch { /* Use safe fallback below. */ }
     if (detail?.status === 'aprobado') return detail;
-    throw new Error(detail?.error || 'No pudimos preparar el pago. Podés volver a intentarlo o comunicarte con el negocio.');
+    // Never reveal tokens, raw backend traces or private payment data in client error messages.
+    if (status === 404) throw new Error('El sistema de pagos todavía no está disponible (función del servidor no encontrada). El negocio debe revisar la configuración de Mercado Pago.');
+    if (status === 401 || status === 403) throw new Error('El servidor de pagos rechazó la autorización. El administrador debe revisar la configuración de Supabase.');
+    if (status >= 500) throw new Error('El servidor de pagos tuvo un problema temporal. No realices otra reserva: consultá con el negocio.');
+    if (!status && /fetch|network|failed to send/i.test(result.error.message || '')) throw new Error('No pudimos conectarnos al servidor de pagos. Revisá tu conexión y volvé a intentar.');
+    const serverMessage = typeof detail?.error === 'string' ? detail.error : '';
+    const safeMessages = ['El negocio todavía no habilitó el pago online.', 'El pago online no está configurado.', 'Mercado Pago no está conectado.'];
+    throw new Error(safeMessages.includes(serverMessage) ? serverMessage : 'No pudimos preparar el pago (servidor de pagos). El negocio debe revisar la integración con Mercado Pago.');
   }
 
   function createCheckoutFlow({ invoke, onChange }) {

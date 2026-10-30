@@ -63,12 +63,16 @@
         const data = await responseData(await invoke('mercadopago-create-checkout', { body: { action: 'availability' } }));
         if (data?.available !== true) throw new Error(data?.message || 'El negocio todavía no habilitó el pago online. Comunicate para coordinar la seña.');
       },
-      prepare(turnoId) {
+      prepare(turnoId, checkoutToken) {
+        if (typeof checkoutToken !== 'string' || !/^[0-9a-f]{96}$/i.test(checkoutToken)) {
+          onChange({ status: 'failed', message: 'No pudimos verificar la autorización segura de esta reserva.' });
+          return Promise.resolve();
+        }
         if (inFlight) return inFlight;
         onChange({ status: 'loading' });
         inFlight = Promise.resolve().then(async () => {
           try {
-            const data = await responseData(await invoke('mercadopago-create-checkout', { body: { turno_id: turnoId } }));
+            const data = await responseData(await invoke('mercadopago-create-checkout', { body: { turno_id: turnoId, checkout_token: checkoutToken } }));
             if (data?.status === 'aprobado') {
               onChange({ status: 'approved', data });
               return;

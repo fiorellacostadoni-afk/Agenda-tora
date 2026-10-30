@@ -6,6 +6,16 @@
 <meta name="description" content="Organizá tu negocio, profesionales, servicios y turnos con TusTurna.">
 <meta name="theme-color" content="#7963A8"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="TusTurna"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="/icon.svg"><link rel="apple-touch-icon" href="/logo.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0"></script>
+<script>
+(function(){
+ const host=String(location.hostname||'').toLowerCase();
+ const stableProductionHosts=['tusturna.vercel.app','agendatora-fiorellacostadoni-1540.vercel.app','agendatora-nut1lwf3d-fiorellacostadoni-1540.vercel.app'];
+ const preview=host.endsWith('.vercel.app')&&!stableProductionHosts.includes(host);
+ if(!preview)return;
+ window.__TUSTURNA_VERCEL_PREVIEW__=true;
+ document.write('<script src="/payment-fixture.js"><\/script>');
+})();
+</script>
 <!-- payment-fixture.js is test-only: never load it in real application. -->
 <style>
 :root{--violet:#7963A8;--lav:#E9E1F3;--cream:#F8F5ED;--sage:#F0EAF7;--green:#755B9B;--ink:#28332f;--muted:#68736e;--white:#fff;--line:#e7e4e0;--red:#a33b45}
@@ -170,6 +180,7 @@ body{background:var(--cream)}
 <script>
 const SUPABASE_URL='https://nhrsxhbksvzkqxxjofiu.supabase.co';
 const SUPABASE_KEY='sb_publishable_Sg8ZcE7LjxoabOJnEYiKVA_IlBUpQON';
+if(window.__TUSTURNA_VERCEL_PREVIEW__&&window.__TUSTURNA_PREVIEW_FIXTURE_READY__!==true){document.body.innerHTML='<main style="font:16px system-ui;padding:32px">La vista de prueba no pudo inicializar el entorno simulado. No se conectó con TusTurna.</main>';throw new Error('Preview fixture failed to load; refusing to connect to production.');}
 const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
 let authMode='signup', user=null, business=null, professionals=[], services=[], professionalServices=[], appointments=[], appointmentPayments=[], currentView='overview';
@@ -388,7 +399,7 @@ db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session?.use
  let availableDates=new Set(), selectedDate='', selectedSlot='', dateRequest=0, slotRequest=0;
   const payments=window.TusTurnaBookingPayments;
   const money=payments.money;
-  let bookedTurnoId='',bookedTerms=null,bookedTransferToken='',submitting=false;
+  let bookedTurnoId='',bookedTerms=null,bookedTransferToken='',bookedCheckoutToken='',submitting=false;
  const dateKey=(y,m,d)=>String(y).padStart(4,'0')+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
  const parseDate=key=>{const a=key.split('-').map(Number);return new Date(Date.UTC(a[0],a[1]-1,a[2],12))};
  const dateText=(key,options)=>new Intl.DateTimeFormat('es-AR',Object.assign({timeZone:'UTC'},options||{})).format(parseDate(key));
@@ -426,7 +437,7 @@ db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session?.use
     document.getElementById('publicConfirmationMark').textContent='✓';status.textContent='Este pago ya fue aprobado. No tenés que pagarlo otra vez.';
    }
   }
-  document.getElementById('publicRetryPayment').addEventListener('click',()=>{if(bookedTurnoId)checkoutFlow.prepare(bookedTurnoId)});
+  document.getElementById('publicRetryPayment').addEventListener('click',()=>{if(bookedTurnoId)checkoutFlow.prepare(bookedTurnoId,bookedCheckoutToken)});
  const selectedProfessional=()=> (catalog?.profesionales||[]).find(x=>x.id===professionalSelect.value); const professionalsForService=id=>(catalog?.profesionales||[]).filter(p=>(p.servicios||[]).some(item=>item.servicio_id===id)); function publicOption(value,label){const option=document.createElement('option');option.value=value;option.textContent=label;return option} function syncBookingChoices(changed='initial'){let serviceId=serviceSelect.value,professionalId=professionalSelect.value;if(changed==='initial'||changed==='service'){const matches=professionalsForService(serviceId);if(!matches.some(p=>p.id===professionalId))professionalId=matches[0]?.id||'';professionalSelect.replaceChildren(...matches.map(p=>publicOption(p.id,p.nombre||'Profesional')));professionalSelect.value=professionalId}if(changed==='initial'||changed==='professional'){const selected=(catalog?.profesionales||[]).find(p=>p.id===professionalId),ids=new Set((selected?.servicios||[]).map(item=>item.servicio_id));if(!ids.has(serviceId))serviceId=selected?.servicios?.[0]?.servicio_id||'';if(serviceId)serviceSelect.value=serviceId}}
  function updateSummary(){
   const s=selectedService(),p=selectedProfessional();
@@ -574,12 +585,14 @@ db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session?.use
        if(terms.required&&!selectedPaymentMethod())throw new Error('Elegí transferencia o Mercado Pago.');if(terms.required&&selectedPaymentMethod()==='transferencia'&&!bankReady())throw new Error('El negocio todavía no configuró sus datos de transferencia.');
        reservationStarted=true;
       const transfer=terms.required&&selectedPaymentMethod()==='transferencia';
-      const {data:reservation,error}=await db.rpc(transfer?'reservar_turno_transferencia_publico':'reservar_turno_publico',{
+      const onlinePayment=terms.online&&selectedPaymentMethod()==='mercadopago';
+      const reservationRpc=transfer?'reservar_turno_transferencia_publico':onlinePayment?'reservar_turno_con_checkout_publico':'reservar_turno_publico';
+      const {data:reservation,error}=await db.rpc(reservationRpc,{
        p_negocio_id:businessId,p_profesional_id:professionalSelect.value,p_servicio_id:serviceSelect.value,p_inicio:selectedSlot,
        p_cliente_nombre:document.getElementById('publicClientName').value.trim(),p_cliente_telefono:document.getElementById('publicClientPhone').value.trim()
       });
       if(error)throw error;
-       const turnoId=transfer?reservation?.turno_id:reservation;bookedTransferToken=transfer?reservation?.token:'';bookedTurnoId=turnoId;bookedTerms=terms;
+       const turnoId=transfer||onlinePayment?reservation?.turno_id:reservation;bookedTransferToken=transfer?reservation?.token:'';bookedCheckoutToken=onlinePayment?reservation?.checkout_token:'';bookedTurnoId=turnoId;bookedTerms=terms;
       const service=selectedService();
       document.getElementById('publicConfirmationDate').textContent=dateText(selectedDate,{weekday:'long',day:'numeric',month:'long'});
       document.getElementById('publicConfirmationTime').textContent=timeText(selectedSlot)+' hs';
@@ -590,7 +603,7 @@ db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_IN'&&session?.use
         document.getElementById('publicConfirmationTitle').textContent=terms.mode==='sena'?'Completá la seña para confirmar':'Completá el pago para confirmar';
         document.getElementById('publicConfirmationText').textContent='Registramos tu solicitud. El turno sigue pendiente hasta que Mercado Pago apruebe el pago.';
         document.getElementById('publicConfirmationMark').textContent='…';
-        await checkoutFlow.prepare(turnoId);
+        await checkoutFlow.prepare(turnoId,bookedCheckoutToken);
       }else{
         setNotice('Tu solicitud quedó pendiente de confirmación por parte del negocio.',false);
       }

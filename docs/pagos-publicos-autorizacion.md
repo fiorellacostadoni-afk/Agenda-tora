@@ -1,22 +1,20 @@
-# TusTurna — autorización segura de pagos públicos (pendiente de implementación)
+# TusTurna — autorización segura de pagos públicos
 
-## Hallazgo confirmado (30/10/2026)
-- `reservar_turno_publico(...)` devuelve únicamente un UUID de turno y no autentica al cliente.
-- `agenda_tora_preparar_pago_turno(uuid)` y `agenda_tora_guardar_preferencia_pago(...)` son RPC privilegiados: anon y authenticated no tienen EXECUTE.
-- `mercadopago-create-checkout` no está desplegada en Supabase.
-- No debe publicarse una Edge Function con service_role que acepte cualquier `turno_id` sin comprobar que la solicitud pertenece al solicitante.
-- Tampoco se debe permitir fijar el importe desde el navegador ni publicar tokens de vendedor.
+## Implementación preparada en `feature/tusturna-pwa`
 
-## Diseño seguro para implementar en una rama y entorno de prueba
-1. Crear una tabla privada para capacidades de pago, con `turno_id`, `token_hash`, fecha de caducidad, intentos y restricciones de uso. Mantener el token original solo en el cliente que creó el turno; almacenar el hash en la base.
-2. Crear una nueva RPC de reserva pública que reutilice la validación y creación actuales dentro de una transacción y devuelva `turno_id` más un secreto aleatorio de un solo uso destinado únicamente a preparar ese pago. La función existente debe mantenerse para flujos que no requieren pago.
-3. En el flujo móvil/web con seña, llamar a esa RPC y enviar a `mercadopago-create-checkout` el token de pago junto con el identificador del turno. No transportar nombres ni teléfonos a la función de checkout.
-4. En la función Edge, verificar el hash, coincidencia del turno, vigencia, estado pendiente y cantidad de intentos. Rechazar tokens inválidos, expirados o ya consumidos sin dar información del turno.
-5. Usar la service role exclusivamente en la función Edge, nunca en el navegador. El servidor invoca `agenda_tora_preparar_pago_turno`, recupera el vendedor asociado a *ese* negocio y calcula el importe desde la BD.
-6. Crear una preferencia Checkout Pro con idempotencia y `external_reference` de la operación de pago; guardar el enlace mediante `agenda_tora_guardar_preferencia_pago`.
-7. El webhook existente debe verificar firma, vendedor, importe, ambiente y estado antes de confirmar el turno. No confiar en parámetros de regreso del navegador.
-8. Revisar la configuración CORS de los orígenes publicados, OAuth, variables secretas, políticas de privacidad y eventos de error. Probar cancelaciones, duplicados, expiración y pagos tardíos en sandbox.
-9. No implementar ni modificar en producción hasta comprobar pruebas y contar con aprobación de despliegue.
+El checkout público usa una capacidad temporal asociada a la reserva:
 
-## Estado
-Documento técnico solamente: no habilita pagos, no modifica la base de datos y no sustituye la función que falta.
+- `reservar_turno_con_checkout_publico(...)` reutiliza la reserva pública existente y, dentro de la misma transacción, guarda un hash SHA-256 de un secreto aleatorio en el esquema privado.
+- El secreto original vuelve una sola vez al navegador que acaba de reservar. No se guardan datos personales adicionales en la función de checkout.
+- `mercadopago-create-checkout` exige el token, valida su formato y lo verifica en la base antes de leer la reserva o preparar el pago.
+- La capacidad vence a los 30 minutos o al comenzar el turno, lo que ocurra primero, y acepta como máximo 20 verificaciones.
+- Las reservas anteriores no se actualizan ni reciben tokens retroactivos. No se puede iniciar un checkout público para ellas con solo el ID.
+- Los flujos de reserva local y transferencia conservan sus RPC existentes.
+
+El webhook conserva la verificación de firma de Mercado Pago y consulta los detalles del pago al servidor del proveedor antes de invocar la conciliación idempotente existente.
+
+## Pruebas y despliegue
+
+La rama incluye pruebas automatizadas de autorización del frontend, firma del webhook y condiciones de seguridad de la migración. La vista de Vercel Preview carga el fixture local, no Supabase ni Mercado Pago.
+
+La función y la migración todavía no se aplicaron a Supabase. El proyecto conectado no permite crear ramas de desarrollo en su plan actual; por eso no se usó el proyecto compartido para evitar cambiar el backend de producción. El vendedor conectado informa `live_mode=true`, así que no se iniciaron pagos ni se generaron preferencias reales.
